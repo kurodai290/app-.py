@@ -39,23 +39,28 @@ if 'money' not in st.session_state:
 def run_settlement(months=1):
     total_income = 0
     total_interest = 0
-    
     for _ in range(months):
         st.session_state.date += timedelta(days=30)
-        # 売上計算
         income = int(st.session_state.staff * 600000 * (1 + st.session_state.share / 100))
-        # 利息計算（月2%）
-        interest = int(st.session_state.debt * 0.02)
-        
+        interest = int(st.session_state.debt * 0.02) # 利息2%
         st.session_state.money += (income - interest)
         total_income += income
         total_interest += interest
-        
     return total_income, total_interest
 
-# --- 4. ヘッダー表示 ---
+# --- 4. ヘッダー表示（日付復活・画像レイアウト再現） ---
 st.title("🏛️ 国家規模経営シミュレーター")
 
+# 日付行
+col_header1, col_header2 = st.columns(2)
+with col_header1:
+    st.caption("📅 日付")
+    st.subheader(st.session_state.date.strftime("%Y年%m月%d日"))
+with col_header2:
+    st.caption("⏳ 決算ステータス")
+    st.subheader("待機中")
+
+# ステータス4列
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("現預金", f"{st.session_state.money / 100000000:.2f}億円")
 col2.metric("借金", f"{st.session_state.debt / 100000000:.2f}億円")
@@ -65,46 +70,56 @@ col4.metric("従業員", f"{st.session_state.staff}名")
 st.divider()
 
 # --- 5. タブ ---
-tab1, tab2, tab3, tab4 = st.tabs(["👤 採用・広報", "💰 金融・融資", "🤝 1兆円M&A", "🏗️ 施設投資"])
+tab1, tab2, tab3, tab4 = st.tabs(["👤 採用・広報", "💰 金融・100億融資", "🤝 1兆円M&A", "🏗️ 施設投資"])
 
 with tab1:
-    st.subheader("人材・ブランド戦略")
+    st.subheader("戦略的採用")
     if st.button("精鋭を採用 (1,000万円)"):
         st.session_state.money -= 10000000
         st.session_state.staff += 5
         st.rerun()
 
 with tab2:
-    st.subheader("資金調達と返済")
+    st.subheader("国家級金融オペレーション")
+    st.write("100億円単位での資金調達および返済を行います。")
     c1, c2 = st.columns(2)
     with c1:
-        if st.button("10億円 融資を受ける"):
-            st.session_state.money += 1000000000
-            st.session_state.debt += 1000000000
+        if st.button("💵 100億円 融資を受ける"):
+            st.session_state.money += 10000000000
+            st.session_state.debt += 10000000000
+            st.warning("100億円の負債を計上しました。")
             st.rerun()
     with c2:
-        if st.button("10億円 借金を返済する"):
-            if st.session_state.money >= 1000000000 and st.session_state.debt >= 1000000000:
-                st.session_state.money -= 1000000000
-                st.session_state.debt -= 1000000000
-                st.success("返済成功")
+        if st.button("🏦 100億円 借金を返済する"):
+            if st.session_state.money >= 10000000000 and st.session_state.debt >= 10000000000:
+                st.session_state.money -= 10000000000
+                st.session_state.debt -= 10000000000
+                st.success("100億円を完済しました。")
                 st.rerun()
+            elif st.session_state.debt < 10000000000 and st.session_state.debt > 0:
+                # 100億未満の端数がある場合の全額返済処理
+                if st.session_state.money >= st.session_state.debt:
+                    st.session_state.money -= st.session_state.debt
+                    st.session_state.debt = 0
+                    st.success("残りの借金をすべて完済しました。")
+                    st.rerun()
+                else:
+                    st.error("残債の返済資金が足りません。")
+            else:
+                st.error("返済に必要な資金が足りないか、借金がありません。")
 
 with tab3:
-    st.subheader("🤝 巨大M&A（企業買収）")
-    st.write("ライバル企業を買収して市場を独占します。")
-    
-    ma_price = 1000000000000  # 1兆円
-    st.info(f"買収価格: 1兆円 / 獲得シェア: +15%")
-    
-    if st.button("1兆円で競合他社を買収する"):
+    st.subheader("🤝 巨大M&A")
+    ma_price = 1000000000000 # 1兆円
+    st.info(f"買収コスト: 1兆円 / 効果: 市場シェア +15%")
+    if st.button("1兆円の買収契約に調印する"):
         if st.session_state.money >= ma_price:
             st.session_state.money -= ma_price
             st.session_state.share += 15
             st.balloons()
-            st.success("歴史的なM&Aが成立しました！世界に衝撃が走っています。")
+            st.rerun()
         else:
-            st.error("資金が足りません。国家予算レベルの蓄えが必要です。")
+            st.error("資金が不足しています。")
 
 with tab4:
     st.subheader(f"インフラ整備（{sum(st.session_state[f['id']] for f in FACILITIES.values())}/20）")
@@ -120,18 +135,16 @@ with tab4:
             else:
                 st.success(f"✅ {name}")
 
-# --- 6. スキップボタンエリア ---
+# --- 6. スキップボタン ---
 st.write("---")
 skip_col1, skip_col2 = st.columns(2)
-
 with skip_col1:
     if st.button("⏩ 翌月までスキップ", use_container_width=True):
         inc, intr = run_settlement(1)
-        st.toast(f"1ヶ月経過：利益 {inc-intr:,}円")
+        st.toast(f"1ヶ月経過：純利益 {inc-intr:,}円")
         st.rerun()
-
 with skip_col2:
-    if st.button("📅 1年（12ヶ月）スキップ", use_container_width=True):
+    if st.button("📅 1年（12ヶ月）一括スキップ", use_container_width=True):
         inc, intr = run_settlement(12)
-        st.warning(f"1年が経過しました！ 総利益: {inc-intr:,}円")
+        st.warning(f"1年経過しました。")
         st.rerun()
