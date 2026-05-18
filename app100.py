@@ -3,10 +3,7 @@ from datetime import datetime, timedelta
 import random
 import pandas as pd
 
-# --- 1. 初期設定 ---
-if 'page' not in st.session_state:
-    st.session_state.page = "メイン"
-
+# --- 1. セッションステート初期化（安全チェック強化） ---
 if 'money' not in st.session_state:
     st.session_state.money = 1970000000 
     st.session_state.debt = 0
@@ -18,9 +15,14 @@ if 'money' not in st.session_state:
     st.session_state.stock_owned = 0
     st.session_state.scandal_timer = 0
     st.session_state.logs = []
-    # 【追加】株価履歴（初期値として現在の株価を入れる）
-    st.session_state.price_history = [10000] 
-    st.session_state.facilities = {}
+    st.session_state.price_history = [10000] # 初期の履歴
+    st.session_state.page = "メイン"
+
+# 【重要】途中で追加した変数が消えていた場合、ここで復活させる
+if 'price_history' not in st.session_state:
+    st.session_state.price_history = [st.session_state.stock_price]
+if 'page' not in st.session_state:
+    st.session_state.page = "メイン"
 
 # --- 2. 共通関数 ---
 def add_log(msg):
@@ -30,13 +32,13 @@ def add_log(msg):
 def run_settlement(months=1):
     for _ in range(months):
         st.session_state.date += timedelta(days=30)
-        # 収益計算
+        # 収益計算（通常 or 不祥事）
         income = int(st.session_state.staff * 600000 * (1 + st.session_state.share / 100))
         if st.session_state.scandal_timer > 0:
             income //= 10
             st.session_state.scandal_timer -= 1
         
-        # 配当金
+        # 利息・配当
         div = int((st.session_state.stock_owned * st.session_state.stock_price) * 0.005)
         st.session_state.money += (income - int(st.session_state.debt * 0.02) + div)
         
@@ -45,7 +47,7 @@ def run_settlement(months=1):
         change = random.uniform(0.85, 1.15)
         st.session_state.stock_price = max(100, int(st.session_state.stock_price * change))
         
-        # 【追加】履歴に保存（直近24ヶ月分に制限）
+        # 履歴を保存
         st.session_state.price_history.append(st.session_state.stock_price)
         if len(st.session_state.price_history) > 24:
             st.session_state.price_history.pop(0)
@@ -77,11 +79,18 @@ with col_t2:
 # 【A. メインページ】
 if st.session_state.page == "メイン":
     st.header("🏢 経営本部")
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     col1.metric("従業員", f"{st.session_state.staff}名")
     col2.metric("シェア", f"{st.session_state.share}%")
     col3.metric("借金", f"{st.session_state.debt / 100000000:.1f}億円")
-    # ここに採用や施設建設のコードを維持...
+    col4.metric("保有株", f"{st.session_state.stock_owned:,}株")
+
+    st.write("---")
+    st.subheader("採用・施設")
+    if st.button("精鋭を採用 (1,000万円)"):
+        st.session_state.money -= 10000000
+        st.session_state.staff += 5
+        st.rerun()
 
 # 【B. 株専用ページ】
 elif st.session_state.page == "株":
@@ -89,8 +98,10 @@ elif st.session_state.page == "株":
     
     # チャート表示
     st.subheader("株価トレンド（直近24ヶ月）")
-    chart_data = pd.DataFrame(st.session_state.price_history, columns=["株価"])
-    st.line_chart(chart_data)
+    # データが空にならないよう安全に変換
+    if st.session_state.price_history:
+        chart_data = pd.DataFrame(st.session_state.price_history, columns=["株価"])
+        st.line_chart(chart_data)
     
     col_s1, col_s2, col_s3 = st.columns(3)
     diff = st.session_state.stock_price - st.session_state.last_stock_price
