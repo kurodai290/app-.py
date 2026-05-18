@@ -35,29 +35,30 @@ if 'money' not in st.session_state:
     for f in FACILITIES.values():
         st.session_state[f["id"]] = False
 
-# --- 3. 関数：決算処理（利息の概念を追加） ---
-def next_month():
-    st.session_state.date += timedelta(days=30)
+# --- 3. 関数：決算処理 ---
+def run_settlement(months=1):
+    total_income = 0
+    total_interest = 0
     
-    # 売上
-    income = int(st.session_state.staff * 600000 * (1 + st.session_state.share / 100))
-    # 利息（借金の2%が毎月引かれる）
-    interest = int(st.session_state.debt * 0.02)
-    
-    net_profit = income - interest
-    st.session_state.money += net_profit
-    
-    if interest > 0:
-        st.toast(f"利益:{income:,}円 / 利息支払:{interest:,}円")
-    else:
-        st.toast(f"利益:{income:,}円を計上しました！")
+    for _ in range(months):
+        st.session_state.date += timedelta(days=30)
+        # 売上計算
+        income = int(st.session_state.staff * 600000 * (1 + st.session_state.share / 100))
+        # 利息計算（月2%）
+        interest = int(st.session_state.debt * 0.02)
+        
+        st.session_state.money += (income - interest)
+        total_income += income
+        total_interest += interest
+        
+    return total_income, total_interest
 
 # --- 4. ヘッダー表示 ---
 st.title("🏛️ 国家規模経営シミュレーター")
 
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("現預金", f"{st.session_state.money / 100000000:.2f}億円")
-col2.metric("借金", f"{st.session_state.debt / 100000000:.2f}億円", delta=f"-{st.session_state.debt * 0.02 / 1000000:.1f}M(利息/月)", delta_color="inverse")
+col2.metric("借金", f"{st.session_state.debt / 100000000:.2f}億円")
 col3.metric("シェア", f"{st.session_state.share}%")
 col4.metric("従業員", f"{st.session_state.staff}名")
 
@@ -67,6 +68,7 @@ st.divider()
 tab1, tab2, tab3, tab4 = st.tabs(["👤 採用・広報", "💰 金融・融資", "🤝 1兆円M&A", "🏗️ 施設投資"])
 
 with tab1:
+    st.subheader("人材・ブランド戦略")
     if st.button("精鋭を採用 (1,000万円)"):
         st.session_state.money -= 10000000
         st.session_state.staff += 5
@@ -85,18 +87,27 @@ with tab2:
             if st.session_state.money >= 1000000000 and st.session_state.debt >= 1000000000:
                 st.session_state.money -= 1000000000
                 st.session_state.debt -= 1000000000
-                st.success("10億円返済しました")
+                st.success("返済成功")
                 st.rerun()
-            elif st.session_state.debt <= 0:
-                st.info("借金はありません")
-            else:
-                st.error("返済資金が足りません")
 
 with tab3:
-    st.info("M&A戦略：現在は買収可能な企業を精査中です。")
+    st.subheader("🤝 巨大M&A（企業買収）")
+    st.write("ライバル企業を買収して市場を独占します。")
+    
+    ma_price = 1000000000000  # 1兆円
+    st.info(f"買収価格: 1兆円 / 獲得シェア: +15%")
+    
+    if st.button("1兆円で競合他社を買収する"):
+        if st.session_state.money >= ma_price:
+            st.session_state.money -= ma_price
+            st.session_state.share += 15
+            st.balloons()
+            st.success("歴史的なM&Aが成立しました！世界に衝撃が走っています。")
+        else:
+            st.error("資金が足りません。国家予算レベルの蓄えが必要です。")
 
 with tab4:
-    st.subheader(f"インフラ整備（{sum(st.session_state[f['id']] for f in FACILITIES.values())}/20 建設済）")
+    st.subheader(f"インフラ整備（{sum(st.session_state[f['id']] for f in FACILITIES.values())}/20）")
     cols = st.columns(2)
     for i, (name, info) in enumerate(FACILITIES.items()):
         with cols[i % 2]:
@@ -106,13 +117,21 @@ with tab4:
                         st.session_state.money -= info["cost"]
                         st.session_state[info["id"]] = True
                         st.rerun()
-                    else:
-                        st.error("資金不足")
             else:
-                st.success(f"✅ {name} ({info['effect']})")
+                st.success(f"✅ {name}")
 
-# --- 6. 翌月スキップ ---
+# --- 6. スキップボタンエリア ---
 st.write("---")
-if st.button("⏩ 翌月までスキップ"):
-    next_month()
-    st.rerun()
+skip_col1, skip_col2 = st.columns(2)
+
+with skip_col1:
+    if st.button("⏩ 翌月までスキップ", use_container_width=True):
+        inc, intr = run_settlement(1)
+        st.toast(f"1ヶ月経過：利益 {inc-intr:,}円")
+        st.rerun()
+
+with skip_col2:
+    if st.button("📅 1年（12ヶ月）スキップ", use_container_width=True):
+        inc, intr = run_settlement(12)
+        st.warning(f"1年が経過しました！ 総利益: {inc-intr:,}円")
+        st.rerun()
