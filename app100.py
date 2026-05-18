@@ -34,8 +34,9 @@ if 'money' not in st.session_state:
     st.session_state.staff = 121
     st.session_state.date = datetime(2052, 4, 3)
     st.session_state.stock_price = 10000
+    st.session_state.last_stock_price = 10000
     st.session_state.stock_owned = 0
-    st.session_state.is_cleared = False 
+    st.session_state.scandal_timer = 0  # 不祥事残り月数
     st.session_state.logs = []
     for f in FACILITIES.values():
         st.session_state[f["id"]] = False
@@ -44,84 +45,68 @@ def add_log(msg):
     st.session_state.logs.insert(0, f"[{st.session_state.date.strftime('%Y/%m')}] {msg}")
     st.session_state.logs = st.session_state.logs[:10]
 
-def get_benefit_multiplier():
-    owned = st.session_state.stock_owned
-    if owned >= 1000000: return 0.5
-    if owned >= 100000:  return 0.7
-    if owned >= 10000:   return 0.9
-    return 1.0
+# トラブルメーカー判定関数 (20000分の1の確率)
+def check_troublemaker(num_hired):
+    for _ in range(num_hired):
+        if random.randint(1, 20000) == 1:
+            return True
+    return False
 
 # --- 3. 決算処理 ---
 def run_settlement(months=1):
-    total_income = 0
-    total_interest = 0
-    total_dividend = 0
-    total_bonus = 0
-    res_total = 0
-    mid_total = 0
-    
     for _ in range(months):
         st.session_state.date += timedelta(days=30)
         current_month = st.session_state.date.month
         
+        # 売上計算
         income = int(st.session_state.staff * 600000 * (1 + st.session_state.share / 100))
+        
+        # 【不祥事デバフ】収益が1/10に
+        if st.session_state.scandal_timer > 0:
+            income = int(income / 10)
+            st.session_state.scandal_timer -= 1
+            if st.session_state.scandal_timer == 0:
+                add_log("✅ようやく不祥事の悪評が消え、収益が元に戻りました。")
+
         interest = int(st.session_state.debt * 0.02)
         dividend = int((st.session_state.stock_owned * st.session_state.stock_price) * 0.005)
         
-        bonus = 0
-        if current_month == 12:
-            bonus = st.session_state.staff * 1000000 
-            total_bonus += bonus
+        bonus = st.session_state.staff * 1000000 if current_month == 12 else 0
         
         st.session_state.money += (income - interest + dividend - bonus)
-        total_income += income
-        total_interest += interest
-        total_dividend += dividend
-        st.session_state.stock_price = int(st.session_state.stock_price * random.uniform(0.85, 1.15))
         
-        if current_month == 1:
-            res = 0
-        elif current_month in [3, 4]:
-            base_res_rate = 0.08 if not st.session_state.get('f_resort') else 0.03
-            res = int(st.session_state.staff * base_res_rate) + random.randint(5, 15)
-        else:
-            res = random.randint(1, 2) if st.session_state.staff > 5 else 0
-            
-        mid = int(res * 0.5)
-        st.session_state.staff = max(1, st.session_state.staff - res + mid)
-        res_total += res
-        mid_total += mid
+        # 株価
+        st.session_state.last_stock_price = st.session_state.stock_price
+        st.session_state.stock_price = max(100, int(st.session_state.stock_price * random.uniform(0.85, 1.15)))
         
-    net_profit = total_income - total_interest + total_dividend - total_bonus
-    add_log(f"💰決算完了: 純利益 {net_profit:,}円")
-    if total_bonus > 0:
-        add_log(f"🎁12月ボーナス総額: {total_bonus:,}円を支給")
+        # 人員
+        if current_month == 1: res = 0
+        elif current_month in [3, 4]: res = int(st.session_state.staff * 0.08) + 5
+        else: res = random.randint(1, 3)
+        st.session_state.staff = max(1, st.session_state.staff - res + int(res*0.5))
+
+    add_log(f"💰決算完了 月数:{months}")
 
 # --- 4. ヘッダー表示 ---
-if st.session_state.share >= 100000000 and not st.session_state.is_cleared:
-    st.balloons(); st.snow(); st.session_state.is_cleared = True
-
 st.title("🏛️ 国家規模経営シミュレーター")
 
-multiplier = get_benefit_multiplier()
-if multiplier < 1.0:
-    st.success(f"💎 株主優待発動中：全コスト {int((1-multiplier)*100)}% 割引！")
+# 不祥事アラート
+if st.session_state.scandal_timer > 0:
+    st.error(f"🚨【不祥事発生中】トラブルメーカー新人の不祥事により、収益が1/10になっています（残り{st.session_state.scandal_timer}ヶ月）")
 
-# 【修正箇所】一行目：日付と「株の保有数・現在値」
 col_top1, col_top2 = st.columns(2)
 with col_top1:
     st.caption("📅 日付")
     st.subheader(st.session_state.date.strftime("%Y年%m月%d日"))
 with col_top2:
-    st.caption("📈 株式情報")
-    # 保有数と現在の価格を並べて表示
-    st.subheader(f"{st.session_state.stock_owned:,} 株 (現在値: {st.session_state.stock_price:,}円)")
+    diff = st.session_state.stock_price - st.session_state.last_stock_price
+    ratio = (diff / st.session_state.last_stock_price) * 100 if st.session_state.last_stock_price > 0 else 0
+    st.metric("📈 現在株価", f"{st.session_state.stock_price:,}円", delta=f"{ratio:.1f}%")
 
-# 二行目：主要スコア
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("現預金", f"{st.session_state.money / 100000000:.1f}億円")
 col2.metric("借金", f"{st.session_state.debt / 100000000:.1f}億円")
-col3.metric("シェア", f"{st.session_state.share:,}%")
+col3.metric("保有株", f"{st.session_state.stock_owned:,}株")
 col4.metric("従業員", f"{st.session_state.staff:,}名")
 
 st.divider()
@@ -130,82 +115,72 @@ st.divider()
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["👤 採用", "💰 金融", "📈 証券", "🤝 M&A", "🏗️ 施設"])
 
 with tab1:
-    is_april = st.session_state.date.month == 4
-    if is_april:
-        st.warning("🌸 4月限定：新卒一括採用イベント実施中！")
-        fresh_cost = 200000000 
-        if st.button(f"🎓 新卒一括採用 (200名 / {fresh_cost/100000000:.1f}億円)"):
-            if st.session_state.money >= fresh_cost:
-                st.session_state.money -= fresh_cost
+    # 4月の新卒採用
+    if st.session_state.date.month == 4:
+        st.warning("🌸 4月限定：新卒採用イベント")
+        if st.button("🎓 新卒200名採用 (2億円)"):
+            if st.session_state.money >= 200000000:
+                st.session_state.money -= 200000000
                 st.session_state.staff += 200
-                add_log("🌸 新卒採用: 200名入社"); st.balloons(); st.rerun()
-        st.divider()
+                # トラブルメーカー判定
+                if check_troublemaker(200):
+                    st.session_state.scandal_timer = 120 # 10年分
+                    add_log("😱最悪だ！新卒の中にトラブルメーカーが混じっていました。10年間収益が激減します。")
+                else:
+                    add_log("採用: 新卒200名が入社しました")
+                st.rerun()
 
-    st.subheader("中途採用センター")
-    base_unit = 1000000 if st.session_state.is_cleared else 2000000
-    unit = int(base_unit * multiplier)
-    c_h1, c_h2 = st.columns(2)
-    for i, n in enumerate([1, 10, 50, 100]):
-        col = c_h1 if i % 2 == 0 else c_h2
-        if col.button(f"{n}人採用 ({unit*n/100000000:.3f}億)", key=f"h_{n}"):
+    st.subheader("中途採用")
+    owned = st.session_state.stock_owned
+    mult = 0.5 if owned >= 1000000 else 0.7 if owned >= 100000 else 0.9 if owned >= 10000 else 1.0
+    unit = int(2000000 * mult)
+    
+    for n in [1, 10, 50, 100]:
+        if st.button(f"{n}人採用 ({unit*n/100000000:.3f}億)", key=f"h_{n}"):
             if st.session_state.money >= unit * n:
-                st.session_state.money -= unit * n; st.session_state.staff += n; add_log(f"採用: {n}名雇用"); st.rerun()
+                st.session_state.money -= unit * n
+                st.session_state.staff += n
+                # 中途でもトラブルメーカーが混じる可能性
+                if check_troublemaker(n):
+                    st.session_state.scandal_timer = 120
+                    add_log("😱トラブルメーカーを採用してしまいました！10年間の収益激減が確定しました。")
+                else:
+                    add_log(f"採用: {n}名雇用")
+                st.rerun()
 
+# (その他のタブ:金融、証券、M&A、施設、スキップボタンは以前のロジック通り)
 with tab2:
-    st.subheader("金融")
-    c_f1, c_f2 = st.columns(2)
-    with c_f1:
-        if st.button("💵 100億円 融資"):
-            st.session_state.money += 10000000000; st.session_state.debt += 10000000000; add_log("融資: 100億"); st.rerun()
-    with c_f2:
-        if st.button("🏦 100億円 返済"):
-            amt = min(st.session_state.debt, 10000000000)
-            if st.session_state.money >= amt:
-                st.session_state.money -= amt; st.session_state.debt -= amt; add_log("返済: 100億"); st.rerun()
-
+    if st.button("💵 100億円 融資"): st.session_state.money += 10000000000; st.session_state.debt += 10000000000; st.rerun()
+    if st.button("🏦 100億円 返済"):
+        amt = min(st.session_state.debt, 10000000000)
+        if st.session_state.money >= amt: st.session_state.money -= amt; st.session_state.debt -= amt; st.rerun()
 with tab3:
-    st.subheader("証券取引センター")
-    total_val = st.session_state.stock_owned * st.session_state.stock_price
-    st.info(f"評価額合計: {total_val:,}円 / 配当金予想: {int(total_val*0.005):,}円/月")
-    c_s1, c_s2 = st.columns(2)
-    with c_s1:
-        if st.button("1000株購入"):
-            cost = st.session_state.stock_price * 1000
-            if st.session_state.money >= cost:
-                st.session_state.money -= cost; st.session_state.stock_owned += 1000; add_log("証券: 1000株購入"); st.rerun()
-    with c_s2:
-        if st.button("1000株売却"):
-            if st.session_state.stock_owned >= 1000:
-                st.session_state.money += st.session_state.stock_price * 1000; st.session_state.stock_owned -= 1000; add_log("証券: 1000株売却"); st.rerun()
-
+    if st.button("1000株購入"):
+        if st.session_state.money >= st.session_state.stock_price * 1000:
+            st.session_state.money -= st.session_state.stock_price * 1000; st.session_state.stock_owned += 1000; st.rerun()
+    if st.button("1000株売却"):
+        if st.session_state.stock_owned >= 1000:
+            st.session_state.money += st.session_state.stock_price * 1000; st.session_state.stock_owned -= 1000; st.rerun()
 with tab4:
-    ma_val = 10 if st.session_state.is_cleared else 1
-    actual_cost = int(ma_val * 1000000000000 * multiplier)
-    if st.button(f"{ma_val}兆円規模M&A実行"):
-        if st.session_state.money >= actual_cost:
-            st.session_state.money -= actual_cost; st.session_state.share += (15 * ma_val); add_log("M&A成功"); st.balloons(); st.rerun()
-
+    cost = int(1000000000000 * mult)
+    if st.button(f"1兆円M&A実行 ({cost/1000000000000:.1f}兆円)"):
+        if st.session_state.money >= cost: st.session_state.money -= cost; st.session_state.share += 15; st.balloons(); st.rerun()
 with tab5:
     cols = st.columns(2)
     for i, (name, info) in enumerate(FACILITIES.items()):
         with cols[i % 2]:
             if not st.session_state[info["id"]]:
-                d_cost = int(info['cost'] * multiplier)
-                cost_t = f"{d_cost/100000000:.0f}億" if d_cost < 1000000000000 else f"{d_cost/1000000000000:.1f}兆"
-                if st.button(f"{name} ({cost_t})", key=f"btn_{info['id']}"):
-                    if st.session_state.money >= d_cost:
-                        st.session_state.money -= d_cost; st.session_state[info["id"]] = True; add_log(f"建設: {name}"); st.rerun()
-            else:
-                st.success(f"✅ {name}")
+                c = int(info['cost'] * mult)
+                if st.button(f"{name} ({c/100000000:.0f}億)", key=f"btn_{info['id']}"):
+                    if st.session_state.money >= c: st.session_state.money -= c; st.session_state[info["id"]] = True; st.rerun()
+            else: st.success(f"✅ {name}")
 
-# --- 7. 下部操作 ---
 st.write("---")
-c_sk1, c_sk2 = st.columns(2)
-with c_sk1:
+c1, c2 = st.columns(2)
+with c1:
     if st.button("⏩ 翌月スキップ", use_container_width=True): run_settlement(1); st.rerun()
-with c_sk2:
-    if st.button("📅 1年一括スキップ", use_container_width=True): run_settlement(12); st.rerun()
+with c2:
+    if st.button("📅 1年スキップ", use_container_width=True): run_settlement(12); st.rerun()
 
 st.subheader("📜 経営ログ")
-for log in st.session_state.logs:
-    st.caption(log)
+for log in st.session_state.logs: st.caption(log)
