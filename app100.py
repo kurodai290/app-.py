@@ -1,7 +1,7 @@
 import streamlit as st
 from datetime import datetime, timedelta
 
-# --- 1. 施設データ（20種類に増量！） ---
+# --- 1. 施設データ（20種類） ---
 FACILITIES = {
     "自社ビル": {"cost": 100000000, "id": "f_building", "effect": "家賃無料"},
     "社員研修所": {"cost": 100000000, "id": "f_training", "effect": "効率+20%"},
@@ -31,41 +31,40 @@ if 'money' not in st.session_state:
     st.session_state.debt = 0
     st.session_state.share = 1
     st.session_state.staff = 121
-    st.session_state.timer = 75
     st.session_state.date = datetime(2052, 4, 3)
-    # 施設保有フラグ（ボタンのkeyと被らないよう prefix を外す）
     for f in FACILITIES.values():
         st.session_state[f["id"]] = False
 
-# --- 3. 関数：決算処理 ---
+# --- 3. 関数：決算処理（利息の概念を追加） ---
 def next_month():
     st.session_state.date += timedelta(days=30)
+    
+    # 売上
     income = int(st.session_state.staff * 600000 * (1 + st.session_state.share / 100))
-    st.session_state.money += income
-    st.session_state.timer = 75
-    st.toast(f"【決算報告】{income:,}円の利益が出ました！")
+    # 利息（借金の2%が毎月引かれる）
+    interest = int(st.session_state.debt * 0.02)
+    
+    net_profit = income - interest
+    st.session_state.money += net_profit
+    
+    if interest > 0:
+        st.toast(f"利益:{income:,}円 / 利息支払:{interest:,}円")
+    else:
+        st.toast(f"利益:{income:,}円を計上しました！")
 
 # --- 4. ヘッダー表示 ---
 st.title("🏛️ 国家規模経営シミュレーター")
 
-col_h1, col_h2 = st.columns(2)
-with col_h1:
-    st.caption("📅 日付")
-    st.subheader(st.session_state.date.strftime("%Y年%m月%d日"))
-with col_h2:
-    st.caption("⏳ 決算まで")
-    st.subheader(f"{st.session_state.timer}秒")
-
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("現預金", f"{st.session_state.money / 100000000:.1f}億円")
-col2.metric("借金", f"{st.session_state.debt / 100000000:.1f}億円")
+col1.metric("現預金", f"{st.session_state.money / 100000000:.2f}億円")
+col2.metric("借金", f"{st.session_state.debt / 100000000:.2f}億円", delta=f"-{st.session_state.debt * 0.02 / 1000000:.1f}M(利息/月)", delta_color="inverse")
 col3.metric("シェア", f"{st.session_state.share}%")
 col4.metric("従業員", f"{st.session_state.staff}名")
 
 st.divider()
 
 # --- 5. タブ ---
-tab1, tab2, tab3, tab4 = st.tabs(["採用・広報", "巨大融資", "1兆円M&A", "施設投資"])
+tab1, tab2, tab3, tab4 = st.tabs(["👤 採用・広報", "💰 金融・融資", "🤝 1兆円M&A", "🏗️ 施設投資"])
 
 with tab1:
     if st.button("精鋭を採用 (1,000万円)"):
@@ -74,33 +73,45 @@ with tab1:
         st.rerun()
 
 with tab2:
-    if st.button("国家融資 (10億円)"):
-        st.session_state.money += 1000000000
-        st.session_state.debt += 1000000000
-        st.rerun()
+    st.subheader("資金調達と返済")
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("10億円 融資を受ける"):
+            st.session_state.money += 1000000000
+            st.session_state.debt += 1000000000
+            st.rerun()
+    with c2:
+        if st.button("10億円 借金を返済する"):
+            if st.session_state.money >= 1000000000 and st.session_state.debt >= 1000000000:
+                st.session_state.money -= 1000000000
+                st.session_state.debt -= 1000000000
+                st.success("10億円返済しました")
+                st.rerun()
+            elif st.session_state.debt <= 0:
+                st.info("借金はありません")
+            else:
+                st.error("返済資金が足りません")
 
 with tab3:
-    st.info("競合他社の買収案件をリストアップ中...")
+    st.info("M&A戦略：現在は買収可能な企業を精査中です。")
 
 with tab4:
-    st.subheader("🏗️ インフラ整備（全20施設）")
-    # 2列でスクロールせず見やすく配置
+    st.subheader(f"インフラ整備（{sum(st.session_state[f['id']] for f in FACILITIES.values())}/20 建設済）")
     cols = st.columns(2)
     for i, (name, info) in enumerate(FACILITIES.items()):
         with cols[i % 2]:
             if not st.session_state[info["id"]]:
-                # key を 'btn_' + id にすることで重複エラーを回避
                 if st.button(f"{name} ({info['cost']/100000000:.1f}億)", key=f"btn_{info['id']}"):
                     if st.session_state.money >= info["cost"]:
                         st.session_state.money -= info["cost"]
                         st.session_state[info["id"]] = True
                         st.rerun()
                     else:
-                        st.error("資金が不足しています")
+                        st.error("資金不足")
             else:
                 st.success(f"✅ {name} ({info['effect']})")
 
-# --- 6. 画面下部：スキップボタン ---
+# --- 6. 翌月スキップ ---
 st.write("---")
 if st.button("⏩ 翌月までスキップ"):
     next_month()
