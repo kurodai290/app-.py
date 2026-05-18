@@ -51,7 +51,7 @@ def get_benefit_multiplier():
     if owned >= 10000:   return 0.9
     return 1.0
 
-# --- 3. 決算処理（100万ボーナス ＆ 1月離職ゼロ） ---
+# --- 3. 決算処理 ---
 def run_settlement(months=1):
     total_income = 0
     total_interest = 0
@@ -68,7 +68,6 @@ def run_settlement(months=1):
         interest = int(st.session_state.debt * 0.02)
         dividend = int((st.session_state.stock_owned * st.session_state.stock_price) * 0.005)
         
-        # --- 12月ボーナス支給ロジック（1人100万円） ---
         bonus = 0
         if current_month == 12:
             bonus = st.session_state.staff * 1000000 
@@ -80,9 +79,7 @@ def run_settlement(months=1):
         total_dividend += dividend
         st.session_state.stock_price = int(st.session_state.stock_price * random.uniform(0.85, 1.15))
         
-        # --- 季節性離職ロジック ---
         if current_month == 1:
-            # 【メリット】ボーナス後の1月は離職者ゼロ！
             res = 0
         elif current_month in [3, 4]:
             base_res_rate = 0.08 if not st.session_state.get('f_resort') else 0.03
@@ -96,12 +93,11 @@ def run_settlement(months=1):
         mid_total += mid
         
     net_profit = total_income - total_interest + total_dividend - total_bonus
-    add_log(f"💰決算: 純益 {net_profit:,}円")
+    add_log(f"💰決算完了: 純利益 {net_profit:,}円")
     if total_bonus > 0:
-        add_log(f"🎁12月ボーナス総額: {total_bonus:,}円を支給しました")
-    add_log(f"👥人員変動: 離職 {res_total}名 / 入社 {mid_total}名")
+        add_log(f"🎁12月ボーナス総額: {total_bonus:,}円を支給")
 
-# --- ヘッダー・タブ表示部分は維持 ---
+# --- 4. ヘッダー表示 ---
 if st.session_state.share >= 100000000 and not st.session_state.is_cleared:
     st.balloons(); st.snow(); st.session_state.is_cleared = True
 
@@ -111,14 +107,17 @@ multiplier = get_benefit_multiplier()
 if multiplier < 1.0:
     st.success(f"💎 株主優待発動中：全コスト {int((1-multiplier)*100)}% 割引！")
 
+# 【修正箇所】一行目：日付と「株の保有数・現在値」
 col_top1, col_top2 = st.columns(2)
 with col_top1:
     st.caption("📅 日付")
     st.subheader(st.session_state.date.strftime("%Y年%m月%d日"))
 with col_top2:
-    st.caption("📈 株の保有数")
-    st.subheader(f"{st.session_state.stock_owned:,} 株")
+    st.caption("📈 株式情報")
+    # 保有数と現在の価格を並べて表示
+    st.subheader(f"{st.session_state.stock_owned:,} 株 (現在値: {st.session_state.stock_price:,}円)")
 
+# 二行目：主要スコア
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("現預金", f"{st.session_state.money / 100000000:.1f}億円")
 col2.metric("借金", f"{st.session_state.debt / 100000000:.1f}億円")
@@ -127,6 +126,7 @@ col4.metric("従業員", f"{st.session_state.staff:,}名")
 
 st.divider()
 
+# --- 5. タブ ---
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["👤 採用", "💰 金融", "📈 証券", "🤝 M&A", "🏗️ 施設"])
 
 with tab1:
@@ -138,8 +138,7 @@ with tab1:
             if st.session_state.money >= fresh_cost:
                 st.session_state.money -= fresh_cost
                 st.session_state.staff += 200
-                add_log("🌸 新卒一括採用で200名が入社")
-                st.balloons(); st.rerun()
+                add_log("🌸 新卒採用: 200名入社"); st.balloons(); st.rerun()
         st.divider()
 
     st.subheader("中途採用センター")
@@ -150,24 +149,34 @@ with tab1:
         col = c_h1 if i % 2 == 0 else c_h2
         if col.button(f"{n}人採用 ({unit*n/100000000:.3f}億)", key=f"h_{n}"):
             if st.session_state.money >= unit * n:
-                st.session_state.money -= unit * n; st.session_state.staff += n; add_log(f"採用: {n}名"); st.rerun()
+                st.session_state.money -= unit * n; st.session_state.staff += n; add_log(f"採用: {n}名雇用"); st.rerun()
 
 with tab2:
-    if st.button("💵 100億円 融資"):
-        st.session_state.money += 10000000000; st.session_state.debt += 10000000000; add_log("融資: 100億"); st.rerun()
-    if st.button("🏦 100億円 返済"):
-        amt = min(st.session_state.debt, 10000000000)
-        if st.session_state.money >= amt:
-            st.session_state.money -= amt; st.session_state.debt -= amt; add_log("返済: 100億"); st.rerun()
+    st.subheader("金融")
+    c_f1, c_f2 = st.columns(2)
+    with c_f1:
+        if st.button("💵 100億円 融資"):
+            st.session_state.money += 10000000000; st.session_state.debt += 10000000000; add_log("融資: 100億"); st.rerun()
+    with c_f2:
+        if st.button("🏦 100億円 返済"):
+            amt = min(st.session_state.debt, 10000000000)
+            if st.session_state.money >= amt:
+                st.session_state.money -= amt; st.session_state.debt -= amt; add_log("返済: 100億"); st.rerun()
 
 with tab3:
-    if st.button("1000株購入"):
-        cost = st.session_state.stock_price * 1000
-        if st.session_state.money >= cost:
-            st.session_state.money -= cost; st.session_state.stock_owned += 1000; add_log("株購入: 1000"); st.rerun()
-    if st.button("1000株売却"):
-        if st.session_state.stock_owned >= 1000:
-            st.session_state.money += st.session_state.stock_price * 1000; st.session_state.stock_owned -= 1000; add_log("株売却: 1000"); st.rerun()
+    st.subheader("証券取引センター")
+    total_val = st.session_state.stock_owned * st.session_state.stock_price
+    st.info(f"評価額合計: {total_val:,}円 / 配当金予想: {int(total_val*0.005):,}円/月")
+    c_s1, c_s2 = st.columns(2)
+    with c_s1:
+        if st.button("1000株購入"):
+            cost = st.session_state.stock_price * 1000
+            if st.session_state.money >= cost:
+                st.session_state.money -= cost; st.session_state.stock_owned += 1000; add_log("証券: 1000株購入"); st.rerun()
+    with c_s2:
+        if st.button("1000株売却"):
+            if st.session_state.stock_owned >= 1000:
+                st.session_state.money += st.session_state.stock_price * 1000; st.session_state.stock_owned -= 1000; add_log("証券: 1000株売却"); st.rerun()
 
 with tab4:
     ma_val = 10 if st.session_state.is_cleared else 1
@@ -189,6 +198,7 @@ with tab5:
             else:
                 st.success(f"✅ {name}")
 
+# --- 7. 下部操作 ---
 st.write("---")
 c_sk1, c_sk2 = st.columns(2)
 with c_sk1:
