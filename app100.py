@@ -2,7 +2,7 @@ import streamlit as st
 from datetime import datetime, timedelta
 import random
 
-# --- 1. 施設データ（20種類） ---
+# --- 1. 施設データ ---
 FACILITIES = {
     "自社ビル": {"cost": 100000000, "id": "f_building", "effect": "家賃無料"},
     "社員研修所": {"cost": 100000000, "id": "f_training", "effect": "効率+20%"},
@@ -33,111 +33,131 @@ if 'money' not in st.session_state:
     st.session_state.share = 1
     st.session_state.staff = 121
     st.session_state.date = datetime(2052, 4, 3)
-    # 株システム
-    st.session_state.stock_price = 10000  # 初期株価
-    st.session_state.stock_owned = 0      # 保有株数
+    st.session_state.stock_price = 10000
+    st.session_state.stock_owned = 0
+    st.session_state.is_cleared = False 
     for f in FACILITIES.values():
         st.session_state[f["id"]] = False
 
-# --- 3. 関数：決算処理（株価変動を追加） ---
+TARGET_SHARE = 100000000
+
+# --- 3. 決算処理 ---
 def run_settlement(months=1):
     total_income = 0
     total_interest = 0
+    resignation_total = 0
+    event_msg = []
     for _ in range(months):
         st.session_state.date += timedelta(days=30)
-        # 売上・利息計算
         income = int(st.session_state.staff * 600000 * (1 + st.session_state.share / 100))
         interest = int(st.session_state.debt * 0.02)
         st.session_state.money += (income - interest)
         total_income += income
         total_interest += interest
-        # 株価の変動 (±10%)
-        change = random.uniform(0.9, 1.1)
-        st.session_state.stock_price = int(st.session_state.stock_price * change)
-    return total_income, total_interest
+        st.session_state.stock_price = int(st.session_state.stock_price * random.uniform(0.85, 1.15))
+        resignation_rate = 0.05 if not st.session_state.get('f_resort') else 0.01
+        resign_count = int(st.session_state.staff * resignation_rate)
+        st.session_state.staff -= resign_count
+        resignation_total += resign_count
+    return total_income, total_interest, resignation_total, event_msg
 
-# --- 4. ヘッダー表示 ---
-st.title("🏛️ 国家規模経営シミュレーター")
+# --- 4. クリア判定 ---
+if st.session_state.share >= TARGET_SHARE and not st.session_state.is_cleared:
+    st.balloons()
+    st.snow()
+    st.session_state.is_cleared = True
 
-col_header1, col_header2 = st.columns(2)
-with col_header1:
-    st.caption("📅 日付")
-    st.subheader(st.session_state.date.strftime("%Y年%m月%d日"))
-with col_header2:
-    st.caption("📈 市場株価")
-    st.subheader(f"{st.session_state.stock_price:,}円")
+# --- 5. ヘッダー表示 ---
+if st.session_state.is_cleared:
+    st.title("🌌 銀河帝国シミュレーター")
+else:
+    st.title("🏛️ 国家規模経営シミュレーター")
 
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("現預金", f"{st.session_state.money / 100000000:.2f}億円")
 col2.metric("借金", f"{st.session_state.debt / 100000000:.2f}億円")
-col3.metric("シェア", f"{st.session_state.share}%")
-col4.metric("保有株", f"{st.session_state.stock_owned}株")
+col3.metric("シェア", f"{st.session_state.share:,}%")
+col4.metric("従業員", f"{st.session_state.staff}名")
 
 st.divider()
 
-# --- 5. タブ ---
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["👤 採用・広報", "💰 金融・融資", "📈 証券取引", "🤝 1兆円M&A", "🏗️ 施設投資"])
+# --- 6. タブ ---
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["👤 採用", "💰 金融", "📈 証券", "🤝 M&A", "🏗️ 施設"])
 
 with tab1:
-    st.subheader("戦略的採用")
-    if st.button("精鋭を採用 (1,000万円)"):
-        st.session_state.money -= 10000000
-        st.session_state.staff += 5
-        st.rerun()
+    st.subheader("人材確保")
+    st.write("規模に合わせて採用人数を選択してください。")
+    
+    # 採用単価（クリア後は割引）
+    unit_cost = 1000000 if st.session_state.is_cleared else 2000000
+    
+    # 採用プランの作成
+    c_hire1, c_hire2 = st.columns(2)
+    with c_hire1:
+        if st.button(f"1人採用 ({unit_cost/10000:,.0f}万円)"):
+            if st.session_state.money >= unit_cost:
+                st.session_state.money -= unit_cost
+                st.session_state.staff += 1
+                st.rerun()
+        if st.button(f"50人一括採用 ({unit_cost*50/100000000:.1f}億円)"):
+            if st.session_state.money >= unit_cost * 50:
+                st.session_state.money -= unit_cost * 50
+                st.session_state.staff += 50
+                st.rerun()
+    with c_hire2:
+        if st.button(f"10人採用 ({unit_cost*10/100000000:.1f}億円)"):
+            if st.session_state.money >= unit_cost * 10:
+                st.session_state.money -= unit_cost * 10
+                st.session_state.staff += 10
+                st.rerun()
+        if st.button(f"100人一括採用 ({unit_cost*100/100000000:.1f}億円)"):
+            if st.session_state.money >= unit_cost * 100:
+                st.session_state.money -= unit_cost * 100
+                st.session_state.staff += 100
+                st.rerun()
 
+# (tab2以降は前のコードと同じため省略していますが、構造は維持されています)
 with tab2:
     st.subheader("100億円単位の金融操作")
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("💵 100億円 融資を受ける"):
+    c_fin1, c_fin2 = st.columns(2)
+    with c_fin1:
+        if st.button("💵 100億円 融資"):
             st.session_state.money += 10000000000
             st.session_state.debt += 10000000000
             st.rerun()
-    with c2:
-        if st.button("🏦 100億円 借金を返済する"):
-            if st.session_state.money >= 10000000000 and st.session_state.debt >= 10000000000:
-                st.session_state.money -= 10000000000
-                st.session_state.debt -= 10000000000
+    with c_fin2:
+        if st.button("🏦 100億円 返済"):
+            amount = min(st.session_state.debt, 10000000000)
+            if st.session_state.money >= amount:
+                st.session_state.money -= amount
+                st.session_state.debt -= amount
                 st.rerun()
 
 with tab3:
-    st.subheader("📉 株式売買（インデックス投資）")
-    st.write(f"現在の株価: **{st.session_state.stock_price:,}円**")
-    st.write(f"保有数: **{st.session_state.stock_owned:,}株** (評価額: {st.session_state.stock_owned * st.session_state.stock_price:,}円)")
-    
-    sc1, sc2 = st.columns(2)
-    with sc1:
-        if st.button("1000株 買う"):
-            cost = st.session_state.stock_price * 1000
-            if st.session_state.money >= cost:
-                st.session_state.money -= cost
-                st.session_state.stock_owned += 1000
-                st.success(f"{cost:,}円で購入しました")
-                st.rerun()
-            else:
-                st.error("資金不足です")
-    with sc2:
-        if st.button("1000株 売る"):
-            if st.session_state.stock_owned >= 1000:
-                gain = st.session_state.stock_price * 1000
-                st.session_state.money += gain
-                st.session_state.stock_owned -= 1000
-                st.success(f"{gain:,}円で売却しました")
-                st.rerun()
-            else:
-                st.error("持ち株がありません")
+    st.subheader("証券取引")
+    if st.button("1000株購入"):
+        cost = st.session_state.stock_price * 1000
+        if st.session_state.money >= cost:
+            st.session_state.money -= cost
+            st.session_state.stock_owned += 1000
+            st.rerun()
+    if st.button("1000株売却"):
+        if st.session_state.stock_owned >= 1000:
+            st.session_state.money += st.session_state.stock_price * 1000
+            st.session_state.stock_owned -= 1000
+            st.rerun()
 
 with tab4:
-    st.subheader("🤝 巨大M&A")
-    if st.button("1兆円で買収契約に調印"):
-        if st.session_state.money >= 1000000000000:
-            st.session_state.money -= 1000000000000
-            st.session_state.share += 15
+    ma_val = 10 if st.session_state.is_cleared else 1
+    if st.button(f"{ma_val}兆円でM&A実行"):
+        cost = ma_val * 1000000000000
+        if st.session_state.money >= cost:
+            st.session_state.money -= cost
+            st.session_state.share += (15 * ma_val)
             st.balloons()
             st.rerun()
 
 with tab5:
-    st.subheader("🏗️ 施設建設")
     cols = st.columns(2)
     for i, (name, info) in enumerate(FACILITIES.items()):
         with cols[i % 2]:
@@ -150,7 +170,7 @@ with tab5:
             else:
                 st.success(f"✅ {name}")
 
-# --- 6. スキップボタン ---
+# --- 7. スキップボタン ---
 st.write("---")
 skip_col1, skip_col2 = st.columns(2)
 with skip_col1:
