@@ -44,39 +44,49 @@ def add_log(msg):
     st.session_state.logs.insert(0, f"[{st.session_state.date.strftime('%Y/%m')}] {msg}")
     st.session_state.logs = st.session_state.logs[:10]
 
-# --- 3. 決算処理 ---
+# --- 3. 決算処理（ログに離職・入社を明記） ---
 def run_settlement(months=1):
     total_income = 0
     total_interest = 0
     res_total = 0
     mid_total = 0
+    
     for _ in range(months):
         st.session_state.date += timedelta(days=30)
+        # 収支計算
         income = int(st.session_state.staff * 600000 * (1 + st.session_state.share / 100))
         interest = int(st.session_state.debt * 0.02)
         st.session_state.money += (income - interest)
         total_income += income
         total_interest += interest
+        
+        # 株価変動
         st.session_state.stock_price = int(st.session_state.stock_price * random.uniform(0.85, 1.15))
+        
+        # 人員変動 (離職2:中途入社1)
         res_rate = 0.04 if not st.session_state.get('f_resort') else 0.01
         res = int(st.session_state.staff * res_rate)
         mid = int(res * 0.5)
+        
         st.session_state.staff = max(0, st.session_state.staff - res + mid)
         res_total += res
         mid_total += mid
-    add_log(f"決算完了: 純益 {total_income-total_interest:,}円")
+    
+    # ログを詳細化
+    net_profit = total_income - total_interest
+    add_log(f"💰決算完了: 純利益 {net_profit:,}円")
+    add_log(f"👥人員変動: 離職 {res_total}名 / 中途入社 {mid_total}名")
 
-# --- 4. クリア判定・ヘッダー ---
+# --- 4. ヘッダー表示 ---
 if st.session_state.share >= 100000000 and not st.session_state.is_cleared:
     st.balloons(); st.snow(); st.session_state.is_cleared = True
 
 st.title("🌌 " + ("銀河帝国" if st.session_state.is_cleared else "国家規模経営") + "シミュレーター")
 
-# 【修正箇所1】ヘッダーに保有株数を追加
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("現預金", f"{st.session_state.money / 100000000:.2f}億円")
 col2.metric("借金", f"{st.session_state.debt / 100000000:.2f}億円")
-col3.metric("保有株", f"{st.session_state.stock_owned:,}株") # ←追加！
+col3.metric("保有株", f"{st.session_state.stock_owned:,}株")
 col4.metric("従業員", f"{st.session_state.staff}名")
 
 st.divider()
@@ -92,47 +102,48 @@ with tab1:
         for n in [1, 50]:
             if st.button(f"{n}人採用 ({unit*n/100000000:.2f}億)", key=f"h_{n}"):
                 if st.session_state.money >= unit * n:
-                    st.session_state.money -= unit * n; st.session_state.staff += n; st.rerun()
+                    st.session_state.money -= unit * n; st.session_state.staff += n
+                    add_log(f"採用: {n}名雇用しました")
+                    st.rerun()
     with c_h2:
         for n in [10, 100]:
             if st.button(f"{n}人採用 ({unit*n/100000000:.2f}億)", key=f"h_{n}"):
                 if st.session_state.money >= unit * n:
-                    st.session_state.money -= unit * n; st.session_state.staff += n; st.rerun()
+                    st.session_state.money -= unit * n; st.session_state.staff += n
+                    add_log(f"採用: {n}名雇用しました")
+                    st.rerun()
 
 with tab2:
     if st.button("💵 100億円 融資"):
-        st.session_state.money += 10000000000; st.session_state.debt += 10000000000; st.rerun()
+        st.session_state.money += 10000000000; st.session_state.debt += 10000000000; add_log("金融: 100億円融資"); st.rerun()
     if st.button("🏦 100億円 返済"):
         amt = min(st.session_state.debt, 10000000000)
         if st.session_state.money >= amt:
-            st.session_state.money -= amt; st.session_state.debt -= amt; st.rerun()
+            st.session_state.money -= amt; st.session_state.debt -= amt; add_log(f"金融: {amt/100000000:.0f}億円返済"); st.rerun()
 
 with tab3:
-    # 【修正箇所2】証券タブ内の表示をリッチに
     st.subheader("証券取引")
     total_val = st.session_state.stock_owned * st.session_state.stock_price
-    st.info(f"現在の株価: {st.session_state.stock_price:,}円 / 保有数: {st.session_state.stock_owned:,}株 (時価総額: {total_val:,}円)")
-    
+    st.info(f"株価: {st.session_state.stock_price:,}円 / 保有: {st.session_state.stock_owned:,}株 (時価: {total_val:,}円)")
     c_s1, c_s2 = st.columns(2)
     with c_s1:
         if st.button("1000株購入"):
             cost = st.session_state.stock_price * 1000
             if st.session_state.money >= cost:
-                st.session_state.money -= cost; st.session_state.stock_owned += 1000; st.rerun()
+                st.session_state.money -= cost; st.session_state.stock_owned += 1000; add_log("証券: 1000株購入"); st.rerun()
     with c_s2:
         if st.button("1000株売却"):
             if st.session_state.stock_owned >= 1000:
-                st.session_state.money += st.session_state.stock_price * 1000; st.session_state.stock_owned -= 1000; st.rerun()
+                st.session_state.money += st.session_state.stock_price * 1000; st.session_state.stock_owned -= 1000; add_log("証券: 1000株売却"); st.rerun()
 
 with tab4:
     ma_val = 10 if st.session_state.is_cleared else 1
-    if st.button(f"{ma_val}兆円でM&A調印"):
+    if st.button(f"{ma_val}兆円でM&A"):
         cost = ma_val * 1000000000000
         if st.session_state.money >= cost:
-            st.session_state.money -= cost; st.session_state.share += (15 * ma_val); st.balloons(); st.rerun()
+            st.session_state.money -= cost; st.session_state.share += (15 * ma_val); add_log(f"M&A: {ma_val}兆円買収"); st.rerun()
 
 with tab5:
-    st.subheader("インフラ整備")
     cols = st.columns(2)
     for i, (name, info) in enumerate(FACILITIES.items()):
         with cols[i % 2]:
@@ -140,7 +151,7 @@ with tab5:
                 cost_t = f"{info['cost']/100000000:.0f}億" if info['cost'] < 1000000000000 else f"{info['cost']/1000000000000:.1f}兆"
                 if st.button(f"{name} ({cost_t})", key=f"btn_{info['id']}"):
                     if st.session_state.money >= info["cost"]:
-                        st.session_state.money -= info["cost"]; st.session_state[info["id"]] = True; st.rerun()
+                        st.session_state.money -= info["cost"]; st.session_state[info["id"]] = True; add_log(f"建設: {name}"); st.rerun()
             else:
                 st.success(f"✅ {name}")
 
@@ -152,6 +163,6 @@ with c_sk1:
 with c_sk2:
     if st.button("📅 1年一括スキップ", use_container_width=True): run_settlement(12); st.rerun()
 
-st.subheader("📜 経営ログ")
+st.subheader("📜 経営ログ（最新10件）")
 for log in st.session_state.logs:
     st.caption(log)
